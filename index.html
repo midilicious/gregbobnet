@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GregBob.net</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  /* ── AUTHENTIC ORIGINAL GAME BOY 4-SHADE LCD PALETTE ── */
+  :root {
+    --gb0: #9bbc0f;  /* lightest  — near-white green */
+    --gb1: #8bac0f;  /* light     — mid green        */
+    --gb2: #306230;  /* dark      — deep green       */
+    --gb3: #0f380f;  /* darkest   — near-black green */
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--gb3);
+    color: var(--gb0);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* ── PIXEL GRID BACKGROUND ── */
+  .grid-bg {
+    position: fixed; inset: 0; z-index: 0;
+    background-image:
+      linear-gradient(rgba(139,172,15,0.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(139,172,15,0.07) 1px, transparent 1px);
+    background-size: 32px 32px;
+    pointer-events: none;
+  }
+
+  /* ── FALLING BLOCKS CANVAS ── */
+  #canvas {
+    position: fixed; inset: 0; z-index: 1;
+    pointer-events: none;
+    opacity: 0.55;
+  }
+
+  /* ── SCANLINES ── */
+  .scanlines {
+    position: fixed; inset: 0; z-index: 5;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(15,56,15,0.18) 2px,
+      rgba(15,56,15,0.18) 4px
+    );
+    pointer-events: none;
+  }
+
+  /* ── LAYOUT ── */
+  .container {
+    position: relative; z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 40px 20px;
+  }
+
+  .game-panel {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+  }
+
+  /* ── SIDE PANELS ── */
+  .side-panel {
+    width: 148px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .side-panel.left  { border-right: 4px solid var(--gb2); padding-right: 14px; }
+  .side-panel.right { border-left:  4px solid var(--gb2); padding-left:  14px; }
+
+  .panel-box {
+    border: 2px solid var(--gb2);
+    background: var(--gb3);
+    padding: 10px 12px;
+  }
+  .panel-label {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 6px;
+    color: var(--gb1);
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+    display: block;
+  }
+  .panel-value {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    color: var(--gb0);
+    line-height: 1.8;
+  }
+
+  .level-bar {
+    height: 7px;
+    background: var(--gb3);
+    border: 1px solid var(--gb2);
+    margin-top: 7px;
+    overflow: hidden;
+  }
+  .level-fill {
+    height: 100%;
+    width: 70%;
+    background: var(--gb1);
+  }
+
+  .status-on {
+    color: var(--gb0);
+    font-size: 8px;
+    animation: blink 1.4s step-end infinite;
+  }
+
+  /* ── MAIN BOARD ── */
+  .board {
+    width: 254px;
+    border: 4px solid var(--gb2);
+    border-top: none;
+    background: var(--gb3);
+    position: relative;
+    box-shadow:
+      0 0 30px rgba(155,188,15,0.07),
+      inset 0 0 40px rgba(15,56,15,0.5);
+    overflow: hidden;
+  }
+
+  .board-header {
+    background: var(--gb3);
+    border-bottom: 4px solid var(--gb2);
+    border-top: 4px solid var(--gb2);
+    text-align: center;
+    padding: 12px 0 10px;
+  }
+  .board-title {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 17px;
+    letter-spacing: 6px;
+    color: var(--gb0);
+    text-shadow: 0 0 8px var(--gb1);
+    animation: flicker 4s infinite;
+  }
+  .board-subtitle {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 6px;
+    color: var(--gb1);
+    letter-spacing: 3px;
+    margin-top: 6px;
+  }
+
+  .board-inner {
+    padding: 20px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* ── LINK BLOCKS ── */
+  .link-block {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 13px 14px;
+    text-decoration: none;
+    position: relative;
+    border: 2px solid var(--gb2);
+    cursor: pointer;
+    transition: transform 0.1s, background 0.1s, border-color 0.1s;
+    overflow: hidden;
+    background: #1c4a1c;
+  }
+
+  /* top bevel */
+  .link-block::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--gb1);
+    opacity: 0.45;
+  }
+  /* left bevel */
+  .link-block::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 3px;
+    background: var(--gb1);
+    opacity: 0.3;
+  }
+
+  .block-tetrio     { background: #163816; border-color: var(--gb0); }
+  .block-linkedin   { background: #1a421a; border-color: var(--gb1); }
+  .block-github     { background: #204820; border-color: var(--gb0); }
+  .block-printables { background: #163816; border-color: var(--gb1); }
+  .block-soundcloud { background: #1a421a; border-color: var(--gb0); }
+  .block-xxxxxx     { background: #204820; border-color: var(--gb1); }
+
+  .link-block:hover {
+    transform: translateX(5px) translateY(-2px);
+    background: var(--gb2);
+    border-color: var(--gb0);
+  }
+  .link-block:hover::after  { opacity: 0.85; }
+  .link-block:hover::before { opacity: 0.65; }
+  .link-block:active { transform: translateX(2px) translateY(0); }
+
+  .block-icon {
+    width: 26px; height: 26px;
+    background: var(--gb2);
+    border: 2px solid var(--gb1);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 7px;
+    color: var(--gb0);
+    flex-shrink: 0;
+  }
+  .link-block:hover .block-icon {
+    background: var(--gb3);
+    border-color: var(--gb0);
+  }
+
+  .block-info {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .block-name {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 8px;
+    letter-spacing: 1px;
+    color: var(--gb0);
+  }
+  .block-desc {
+    font-size: 9px;
+    color: var(--gb1);
+    letter-spacing: 0.5px;
+  }
+  .link-block:hover .block-desc { color: var(--gb0); opacity: 0.8; }
+
+  .block-arrow {
+    margin-left: auto;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    color: var(--gb2);
+    transition: color 0.15s, transform 0.15s;
+    flex-shrink: 0;
+  }
+  .link-block:hover .block-arrow {
+    color: var(--gb0);
+    transform: translateX(4px);
+  }
+
+  /* ── MINI BLOCK STACK ── */
+  .board-stack {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 0 14px 14px;
+  }
+  .mini-block {
+    width: 20px; height: 20px;
+    border: 1px solid var(--gb2);
+  }
+  .mini-block.filled { background: var(--gb2); }
+  .mini-block.bright { background: var(--gb1); }
+  .mini-block.dim    { background: #1a3a1a; }
+
+  /* ── NEXT PIECE GRID ── */
+  .next-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 15px);
+    grid-template-rows: repeat(2, 15px);
+    gap: 2px;
+    margin-top: 4px;
+  }
+  .nc {
+    width: 15px; height: 15px;
+    border: 1px solid var(--gb3);
+    background: var(--gb3);
+  }
+  .nc.on {
+    background: var(--gb1);
+    border-color: var(--gb0);
+    box-shadow: inset 0 1px 0 rgba(155,188,15,0.4);
+  }
+
+  /* ── BOTTOM PROMPT ── */
+  .insert-coin {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 7px;
+    letter-spacing: 3px;
+    color: var(--gb1);
+    text-align: center;
+    margin-top: 18px;
+    animation: blink 1.2s step-end infinite;
+  }
+
+  /* ── ANIMATIONS ── */
+  @keyframes flicker {
+    0%,89%,91%,95%,100% { opacity: 1; }
+    90%  { opacity: 0.55; }
+    93%  { opacity: 0.7; }
+  }
+  @keyframes blink {
+    0%,100% { opacity: 1; }
+    50%     { opacity: 0; }
+  }
+  @keyframes dropIn {
+    from { transform: translateY(-36px); opacity: 0; }
+    to   { transform: translateY(0);     opacity: 1; }
+  }
+
+  .link-block:nth-child(1) { animation: dropIn 0.35s 0.20s both; }
+  .link-block:nth-child(2) { animation: dropIn 0.35s 0.30s both; }
+  .link-block:nth-child(3) { animation: dropIn 0.35s 0.40s both; }
+  .link-block:nth-child(4) { animation: dropIn 0.35s 0.50s both; }
+  .link-block:nth-child(5) { animation: dropIn 0.35s 0.60s both; }
+  .link-block:nth-child(6) { animation: dropIn 0.35s 0.70s both; }
+
+  @media (max-width: 580px) {
+    .side-panel { display: none; }
+    .board { width: 290px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="grid-bg"></div>
+<canvas id="canvas"></canvas>
+<div class="scanlines"></div>
+
+<div class="container">
+  <div class="game-panel">
+
+    <!-- LEFT PANEL -->
+    <div class="side-panel left">
+      <div class="panel-box">
+        <span class="panel-label">SCORE</span>
+        <div class="panel-value" id="score">000000</div>
+      </div>
+      <div class="panel-box">
+        <span class="panel-label">LINES</span>
+        <div class="panel-value">067</div>
+      </div>
+      <div class="panel-box">
+        <span class="panel-label">LEVEL</span>
+        <div class="panel-value">01</div>
+        <div class="level-bar"><div class="level-fill"></div></div>
+      </div>
+      <div class="panel-box">
+        <span class="panel-label">STATUS</span>
+        <div class="panel-value status-on">ONLINE ■</div>
+      </div>
+    </div>
+
+    <!-- MAIN BOARD -->
+    <div class="board">
+      <div class="board-header">
+        <div class="board-title">GregBob</div>
+        <div class="board-subtitle">SELECT YOUR BLOCK</div>
+      </div>
+
+      <div class="board-inner">
+
+        <a class="link-block block-tetrio" href="https://ch.tetr.io/u/szkud" target="_blank">
+          <div class="block-icon">T</div>
+          <div class="block-info">
+            <div class="block-name">TETR.IO</div>
+            <div class="block-desc">not-so-high scores</div>
+          </div>
+          <div class="block-arrow">▶</div>
+        </a>
+
+        <a class="link-block block-linkedin" href="https://linkedin.com" target="_blank">
+          <div class="block-icon">in</div>
+          <div class="block-info">
+            <div class="block-name">LINKEDIN</div>
+            <div class="block-desc">professional profile</div>
+          </div>
+          <div class="block-arrow">▶</div>
+        </a>
+
+        <a class="link-block block-github" href="https://github.com/midilicious" target="_blank">
+          <div class="block-icon">&lt;/&gt;</div>
+          <div class="block-info">
+            <div class="block-name">GITHUB</div>
+            <div class="block-desc">code &amp; projects</div>
+          </div>
+          <div class="block-arrow">▶</div>
+        </a>
+
+        <a class="link-block block-printables" href="https://printables.com" target="_blank">
+          <div class="block-icon">3D</div>
+          <div class="block-info">
+            <div class="block-name">PRINTABLES</div>
+            <div class="block-desc">3D print designs</div>
+          </div>
+          <div class="block-arrow">▶</div>
+        </a>
+
+        <a class="link-block block-soundcloud" href="https://soundcloud.com/midilicious" target="_blank">
+          <div class="block-icon">♩</div>
+          <div class="block-info">
+            <div class="block-name">SOUNDCLOUD</div>
+            <div class="block-desc">sounds run together</div>
+          </div>
+          <div class="block-arrow">▶</div>
+        </a>
+
+
+      </div>
+
+      <div class="board-stack" id="stack"></div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="side-panel right">
+      <div class="panel-box">
+        <span class="panel-label">NEXT</span>
+        <div class="next-grid" id="next"></div>
+      </div>
+      <div class="panel-box">
+        <span class="panel-label">HOLD</span>
+        <div class="next-grid" id="hold"></div>
+      </div>
+      <div class="panel-box">
+        <span class="panel-label">CONTROLS</span>
+        <div style="font-family:'Press Start 2P',monospace;font-size:6px;line-height:2.4;color:var(--gb1);">
+          CLICK<br>▶ SELECT
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="insert-coin">▼ CLICK A BLOCK TO CONNECT ▼</div>
+</div>
+
+<script>
+// ── FALLING BLOCKS — only GB palette shades ──
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const GB_COLORS = ['#9bbc0f','#8bac0f','#306230'];
+const CELL = 32;
+
+const SHAPES = [
+  [[1,1,1,1]],
+  [[1,1],[1,1]],
+  [[0,1,0],[1,1,1]],
+  [[1,0,0],[1,1,1]],
+  [[0,0,1],[1,1,1]],
+  [[0,1,1],[1,1,0]],
+  [[1,1,0],[0,1,1]],
+];
+
+function randomPiece() {
+  const shape = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+  const color = GB_COLORS[Math.floor(Math.random() * GB_COLORS.length)];
+  const cols = Math.max(1, Math.floor(canvas.width / CELL) - shape[0].length);
+  return {
+    shape, color,
+    x: Math.floor(Math.random() * cols) * CELL,
+    y: -shape.length * CELL,
+    speed: 0.35 + Math.random() * 0.7,
+    opacity: 0.2 + Math.random() * 0.4,
+  };
+}
+
+const pieces = Array.from({length: 14}, () => {
+  const p = randomPiece();
+  p.y = Math.random() * canvas.height;
+  return p;
+});
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (const p of pieces) {
+    p.y += p.speed;
+    if (p.y > canvas.height + 80) Object.assign(p, randomPiece());
+    ctx.save();
+    ctx.globalAlpha = p.opacity;
+    for (let r = 0; r < p.shape.length; r++) {
+      for (let c = 0; c < p.shape[r].length; c++) {
+        if (!p.shape[r][c]) continue;
+        const x = p.x + c * CELL;
+        const y = p.y + r * CELL;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(x, y, CELL - 2, CELL - 2);
+        // top/left bevel
+        ctx.fillStyle = '#9bbc0f';
+        ctx.globalAlpha = p.opacity * 0.3;
+        ctx.fillRect(x, y, CELL - 2, 3);
+        ctx.fillRect(x, y, 3, CELL - 2);
+        // bottom/right shadow
+        ctx.fillStyle = '#0f380f';
+        ctx.fillRect(x, y + CELL - 5, CELL - 2, 3);
+        ctx.fillRect(x + CELL - 5, y, 3, CELL - 2);
+        ctx.globalAlpha = p.opacity;
+      }
+    }
+    ctx.restore();
+  }
+  requestAnimationFrame(draw);
+}
+draw();
+
+// ── SCORE TICKER ──
+let score = 0;
+const scoreEl = document.getElementById('score');
+setInterval(() => {
+  score += Math.floor(Math.random() * 40 + 10);
+  scoreEl.textContent = String(score).padStart(6, '0');
+}, 900);
+
+// ── MINI BOTTOM STACK ──
+const stack = document.getElementById('stack');
+const stackPattern = ['filled','bright','bright','bright','dim','bright','dim','filled','dim'];
+for (let i = 0; i < 30; i++) {
+  const b = document.createElement('div');
+  b.className = 'mini-block ' + stackPattern[i % stackPattern.length];
+  stack.appendChild(b);
+}
+
+// ── NEXT / HOLD PREVIEWS ──
+function fillNext(id, shape) {
+  const el = document.getElementById(id);
+  el.innerHTML = '';
+  for (let r = 0; r < 2; r++) {
+    for (let c = 0; c < 4; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'nc' + (shape[r]?.[c] ? ' on' : '');
+      el.appendChild(cell);
+    }
+  }
+}
+fillNext('next', [[0,1,1,0],[0,1,1,0]]);
+fillNext('hold', [[1,1,1,1],[0,0,0,0]]);
+</script>
+</body>
+</html>
